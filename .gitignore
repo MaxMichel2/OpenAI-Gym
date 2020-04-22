@@ -1,5 +1,7 @@
 __pycache__/
+LunarLander_v2/
 *.py[cod]
 CartPole_AI_tutorial.py
 LunarLander_v2.py
 *.h5
+*.csv

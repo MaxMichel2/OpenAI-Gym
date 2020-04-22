@@ -24,14 +24,12 @@ import csv
 class LunarLanderDQNAgent:
     # Initialise Agent
     def __init__(self):
-        render, test_model = self._args()
+        # render, test_model = self._args()
+        test_model = None
         self.env = gym.make(ENVIRONMENT)
-        self.action_space = self.env.action_space
-        self.observation_space = self.env.observation_space
-        self.render = render
-
-        self.number_of_actions = self.action_space.n
-        self.number_of_observations = self.observation_space.shape[0]
+        self.render = True
+        self.number_of_actions = self.env.action_space.n
+        self.number_of_observations = self.env.observation_space.shape[0]
 
         self.epsilon = EPSILON # Exploration rate
         self.epsilon_min = EPSILON_MIN
@@ -39,6 +37,7 @@ class LunarLanderDQNAgent:
         self.gamma = GAMMA # Discount factor
         self.alpha = ALPHA # Learning rate
         self.batch_size = BATCH_SIZE
+        self.training_frequency = TRAINING_FREQUENCY
         self.memory = deque(maxlen=MEMORY_SIZE)
         self.model = self.build_model()
         
@@ -73,31 +72,35 @@ class LunarLanderDQNAgent:
     # Choose an action based on the exploration rate and current state of the network
     def choose_action(self, state):
         if np.random.rand() <= self.epsilon:
-            return self.action_space.sample()
+            return random.randrange(self.number_of_actions)
         q_values = self.model.predict(state)
         return np.argmax(q_values[0])
 
-    def replay(self):
-        # Calling i[x] in the following lines triggers a false-positive pylint unsubscriptable error
-        minibatch = random.sample(self.memory, min(len(self.memory), self.batch_size))
-        states = np.array([i[0] for i in minibatch])
-        actions = np.array([i[1] for i in minibatch])
-        rewards = np.array([i[2] for i in minibatch])
-        next_states = np.array([i[3] for i in minibatch])
-        dones = np.array([i[4] for i in minibatch])
-
-        states = np.squeeze(states)
-        next_states = np.squeeze(next_states)
-
-        targets = rewards + self.gamma * (np.amax(self.model.predict_on_batch(next_states), axis=1))*(1-dones)
-        targets_full = self.model.predict_on_batch(states)
-        index = np.array([i for i in range(min(len(self.memory), self.batch_size))])
-        targets_full[[index], [actions]] = targets
-
-        self.model.fit(states, targets_full, epochs=1, verbose=0, callbacks=[self.csv_loss_logger])
-        self.epsilon *= self.epsilon_decay
-        self.epsilon = max(self.epsilon_min, self.epsilon)
+    def replay(self, total_steps):
+        if len(self.memory) < self.batch_size:
+            return
         
+        if total_steps % self.training_frequency == 0:
+            # Take a random sample of events from memory
+            minibatch = random.sample(self.memory, self.batch_size)
+
+            # Calculate Q values for each event and train the model
+            for state, action, reward, next_state, done in minibatch:
+                target = reward  
+
+                if not done:
+                    # Predict future reward
+                    target = reward + self.gamma * np.amax(self.model.predict(next_state)[0])
+
+                # Map state to future reward
+                target_f = self.model.predict(state)
+                target_f[0][action] = target
+                
+                # Train model
+                self.model.fit(state, target_f, epochs=1, verbose=0, callbacks=[self.csv_loss_logger])
+
+        self.epsilon *= self.epsilon_decay
+        self.epsilon = max(self.epsilon_min, self.epsilon)   
 
     def preprocess_state(self, state):
         return np.reshape(state, (1, self.number_of_observations))
@@ -107,7 +110,7 @@ class LunarLanderDQNAgent:
         try:
             score_history = deque(maxlen=CONSECUTIVE_EPISODES_TO_SOLVE)
             total_steps = 0
-
+            
             for episode in range(EPISODES):
                 # Reset state at the beginning of game
                 state = self.preprocess_state(self.env.reset())
@@ -122,7 +125,7 @@ class LunarLanderDQNAgent:
                     # Render or not
                     if self.render:
                         self.env.render()
-
+                    
                     # Choose an action
                     action = self.choose_action(state)
 
@@ -137,16 +140,16 @@ class LunarLanderDQNAgent:
                     self.remember(state, action, reward, next_state, done)
 
                     # Train with the experience
-                    self.replay()
+                    self.replay(total_steps)
 
                     if done:
                         score_history.append(score)
                         average_score = np.mean(score_history)
 
-                        text = "[Episode {} of {}] - Score time this episode was {} with epsilon = {}".format(episode, episodes, score, self.epsilon)
+                        text = "[Episode {} of {}] - Score time this episode was {} with epsilon = {}".format(episode, EPISODES, score, self.epsilon)
                         text2 = "- Over last {} episodes: Min = {:.2f}, Mean = {:.2f}, Max = {:.2f}".format(CONSECUTIVE_EPISODES_TO_SOLVE, min(score_history), average_score, max(score_history))
                         text3 = "- Steps this episode: {}, Total steps: {}".format(steps, total_steps)
-                        print(text + "\n" + (15 + len(str(episode)) + len(str(episodes)))*' '+ text2 + "\n" + (15 + len(str(episode)) + len(str(episodes)))*' '+ text3)
+                        print(text + "\n" + (15 + len(str(episode)) + len(str(EPISODES)))*' '+ text2 + "\n" + (15 + len(str(episode)) + len(str(EPISODES)))*' '+ text3)
 
                         # Check if the goal has been reached
                         if average_score >= POINTS_TO_SOLVE:
@@ -154,7 +157,7 @@ class LunarLanderDQNAgent:
                             filename = self.save_name + '_final.h5'
                             print("Saving model to {}".format(filename))
                             self.save_model(filename)
-                            self.exit()
+                            sys.exit()
                         break
                     
                     # If not done, advance to the next state for the following iteration
@@ -165,7 +168,7 @@ class LunarLanderDQNAgent:
                     filename = self.save_name + '_' + str(episode) + '.h5'
                     self.save_model(filename)
             
-            self.exit()
+            sys.exit()
 
         except KeyboardInterrupt:
             # Catch Ctrl+C and end the game correctly
@@ -176,6 +179,7 @@ class LunarLanderDQNAgent:
         except:
             self.env.close()
             sys.exit()
+        
 
     def test_agent(self):
         try:
@@ -244,7 +248,7 @@ class LunarLanderDQNAgent:
     
     def load_model(self, filename):
         self.model.load_weights(filename)
-
+    
     # Argument parser for agent options
     def _args(self):
         parser = argparse.ArgumentParser()
