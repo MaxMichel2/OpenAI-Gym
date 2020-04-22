@@ -211,7 +211,7 @@ class LunarLanderDQNAgent:
                         score_history.append(score)
                         average_score = np.mean(score_history)
 
-                        text = "[Episode {} of 99] - Score time this episode was {} with epsilon = {}".format(episode, episodes, score, self.epsilon)
+                        text = "[Episode {} of 99] - Score time this episode was {} with epsilon = {}".format(episode, score, self.epsilon)
                         text2 = "- Over last {} episodes: Min = {:.2f}, Mean = {:.2f}, Max = {:.2f}".format(CONSECUTIVE_EPISODES_TO_SOLVE, min(score_history), average_score, max(score_history))
                         text3 = "- Steps this episode: {}, Total steps: {}".format(steps, total_steps)
                         print(text + "\n" + (17 + len(str(episode)))*' '+ text2 + "\n" + (17 + len(str(episode)))*' '+ text3)
